@@ -1,0 +1,28 @@
+# ROS 2 / colcon generated directories
+/build/
+/install/
+/log/
+
+# Python cache and packaging metadata
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local Python environments
+.venv/
+venv/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# External xArm repository, managed separately
+/src/xarm_ros2/

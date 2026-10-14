@@ -12,6 +12,11 @@ from shape_msgs.msg import SolidPrimitive
 
 from big_chemistry_motion.target_reader import TargetReader
 
+import time
+
+from moveit_msgs.msg import DisplayTrajectory
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+
 
 def plan_to_target(node, transform):
     client = node.create_client(
@@ -109,6 +114,48 @@ def plan_to_target(node, transform):
     finally:
         node.destroy_client(client)
 
+def show_trajectory(node, result):
+    qos = QoSProfile(
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
+
+    publisher = node.create_publisher(
+        DisplayTrajectory,
+        '/display_planned_path',
+        qos,
+    )
+
+    node.get_logger().info('Waiting for a trajectory display subscriber...')
+
+    deadline = time.monotonic() + 10.0
+
+    while rclpy.ok() and publisher.get_subscription_count() == 0:
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                'No trajectory display subscriber found. '
+                'Check the RViz Planned Path display.'
+            )
+
+        rclpy.spin_once(node, timeout_sec=0.1)
+
+    if not rclpy.ok():
+        return
+
+    display = DisplayTrajectory()
+    display.trajectory_start = result.trajectory_start
+    display.trajectory = [result.trajectory]
+
+    publisher.publish(display)
+
+    node.get_logger().info(
+        'Trajectory preview published. No execution. '
+        'Press Ctrl+C to close this node.'
+    )
+
+    rclpy.spin(node)
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -117,7 +164,8 @@ def main(args=None):
     try:
         node = TargetReader()
         target = node.read_target()
-        plan_to_target(node, target)
+        result = plan_to_target(node, target)
+        show_trajectory(node, result)
     except (ValueError, RuntimeError) as error:
         if node is not None:
             node.get_logger().error(str(error))

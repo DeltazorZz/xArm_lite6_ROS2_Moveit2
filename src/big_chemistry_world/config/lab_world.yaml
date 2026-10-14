@@ -1,7 +1,3 @@
-# Big Chemistry environment configuration.
-# Distances: metres. Angles: radians.
-
-
 schema_version: 1
 
 world_frame: lab_world
@@ -12,10 +8,20 @@ frames:
     translation: [0.0, 0.0, 0.0]
     rotation_rpy: [0.0, 0.0, 0.0]
 
+  - parent: lab_world
+    child: test_device
+    translation: [0.40, -0.15, 0.0]
+    rotation_rpy: [0.0, 0.0, 0.0]
+
+  - parent: test_device
+    child: test_pickup
+    translation: [0.0, 0.0, 0.25]
+    rotation_rpy: [0.0, 0.0, 0.0]
+
 collision_objects:
   - id: test_obstacle
-    frame_id: lab_world
+    frame_id: test_device
     type: box
     dimensions: [0.10, 0.10, 0.20]
-    position: [0.40, 0.15, 0.10]
+    position: [0.0, 0.0, 0.10]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]

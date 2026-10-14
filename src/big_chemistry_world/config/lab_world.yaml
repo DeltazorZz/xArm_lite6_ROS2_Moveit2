@@ -18,6 +18,11 @@ frames:
     translation: [0.0, 0.0, 0.25]
     rotation_rpy: [0.0, 0.0, 0.0]
 
+  - parent: test_pickup
+    child: test_tool_goal
+    translation: [0.0, 0.0, 0.0]
+    rotation_rpy: [3.14159265359, 0.0, 0.0]
+
 collision_objects:
   - id: test_obstacle
     frame_id: test_device

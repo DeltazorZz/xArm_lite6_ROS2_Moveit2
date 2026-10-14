@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'target_reader = big_chemistry_motion.target_reader:main',
+            'plan_to_target = big_chemistry_motion.plan_to_target:main',
         ],
     },
 )

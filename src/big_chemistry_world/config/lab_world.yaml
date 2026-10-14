@@ -12,4 +12,10 @@ frames:
     translation: [0.0, 0.0, 0.0]
     rotation_rpy: [0.0, 0.0, 0.0]
 
-collision_objects: []
+collision_objects:
+  - id: test_obstacle
+    frame_id: lab_world
+    type: box
+    dimensions: [0.10, 0.10, 0.20]
+    position: [0.40, 0.15, 0.10]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]

@@ -6,8 +6,9 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
-
-
+from big_chemistry_world.scene_objects import create_collision_object
+from moveit_msgs.msg import PlanningScene
+from moveit_msgs.srv import ApplyPlanningScene
 
 class WorldNode(Node):
     def __init__(self):
@@ -120,6 +121,62 @@ class WorldNode(Node):
                 f'Static TF published: '
                 f'{transform.header.frame_id} -> {transform.child_frame_id}'
             )
+    
+    def apply_collision_objects(self):
+        if not self.collision_objects:
+            self.get_logger().info('No collision objects to apply.')
+            return
+
+        client = self.create_client(
+            ApplyPlanningScene,
+            '/apply_planning_scene',
+        )
+
+        try:
+            self.get_logger().info(
+                'Waiting for MoveIt planning scene service...'
+            )
+
+            if not client.wait_for_service(timeout_sec=10.0):
+                raise RuntimeError(
+                    'MoveIt service unavailable. Start the MoveIt launch first.'
+                )
+
+            scene = PlanningScene()
+            scene.is_diff = True
+            scene.robot_state.is_diff = True
+            scene.world.collision_objects = self.collision_objects
+
+            request = ApplyPlanningScene.Request()
+            request.scene = scene
+
+            future = client.call_async(request)
+
+            rclpy.spin_until_future_complete(
+                self,
+                future,
+                timeout_sec=10.0,
+            )
+
+            if not future.done():
+                future.cancel()
+                raise RuntimeError(
+                    'Timed out waiting for MoveIt. Scene state is unconfirmed.'
+                )
+
+            response = future.result()
+
+            if response is None or not response.success:
+                raise RuntimeError(
+                    'MoveIt could not apply the collision objects.'
+                )
+
+            self.get_logger().info(
+                f'MoveIt accepted {len(self.collision_objects)} '
+                f'collision object(s).'
+            )
+        finally:
+            self.destroy_client(client)
         
 def main(args=None):
     rclpy.init(args=args)
@@ -130,9 +187,24 @@ def main(args=None):
         
         try: 
             node.load_config()
+            node.collision_objects = [
+                create_collision_object(config)
+                for config in node.config['collision_objects']
+            ]
+
+            object_ids = [obj.id for obj in node.collision_objects]
+            if len(object_ids) != len(set(object_ids)):
+                raise ValueError('Collision object IDs must be unique.')
+
             node.publish_static_frames()
             
-        except (OSError, ValueError, yaml.YAMLError) as error: 
+            node.get_logger().info(
+                f'Prepared collision objects: {len(node.collision_objects)}'
+            )
+            
+            node.apply_collision_objects()
+            
+        except (OSError, ValueError, yaml.YAMLError, RuntimeError) as error: 
             node.get_logger().error(
                 f'Cloud not initialize world: {error}'
             )

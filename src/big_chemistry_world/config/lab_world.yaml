@@ -10,23 +10,47 @@ frames:
 
   - parent: lab_world
     child: test_device
-    translation: [0.40, -0.15, 0.0]
-    rotation_rpy: [0.0, 0.0, 0.0]
+    translation: [0.133160748727, -0.255, 0.182]
+    rotation_rpy: [0.0, 0.0, -1.57079632679]
 
-  - parent: test_device
+  - parent: lab_world
     child: test_pickup
-    translation: [0.0, 0.0, 0.25]
+    translation: [0.231160748727, -0.352485234158, 0.285373975056]
     rotation_rpy: [0.0, 0.0, 0.0]
 
   - parent: test_pickup
     child: test_tool_goal
     translation: [0.0, 0.0, 0.0]
-    rotation_rpy: [3.14159265359, 0.0, 0.0]
+    rotation_rpy: [3.092677130111, 0.029176729897, -0.037457111126]
+
+
 
 collision_objects:
-  - id: test_obstacle
+  - id: opening_left_wall
     frame_id: test_device
     type: box
-    dimensions: [0.10, 0.10, 0.20]
-    position: [0.0, 0.0, 0.10]
+    dimensions: [0.04, 0.20, 0.27]
+    position: [0.02, 0.36, 0.135]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: opening_right_wall
+    frame_id: test_device
+    type: box
+    dimensions: [0.04, 0.20, 0.27]
+    position: [0.02, -0.36, 0.135]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: opening_top_wall
+    frame_id: test_device
+    type: box
+    dimensions: [0.04, 0.92, 0.08]
+    position: [0.02, 0.0, 0.31]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: opening_bottom_wall
+    frame_id: test_device
+    type: box
+    dimensions: [0.04, 0.92, 0.08]
+    position: [0.02, 0.00, -0.04]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+  

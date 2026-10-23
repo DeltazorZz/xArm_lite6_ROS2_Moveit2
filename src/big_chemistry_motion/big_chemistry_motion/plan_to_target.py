@@ -1,4 +1,5 @@
 import rclpy
+import math
 
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import (
@@ -16,6 +17,76 @@ import time
 
 from moveit_msgs.msg import DisplayTrajectory
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+
+def log_trajectory_metrics(node, result): 
+    trajectory = result.trajectory.joint_trajectory
+    names = list(trajectory.joint_names)
+    points = trajectory.points
+
+    if not names or not points: 
+        raise ValueError('Cannot measure an empty trajectory.')
+    
+    for point in points: 
+        if len(point.positions) != len(names):
+            raise ValueError('Trajectory joint positions are incompleate.')
+        
+        if not all(math.isfinite(value) for value in point.positions):
+            raise ValueError('Trajectory contains non-finite joint positions.')
+        
+    start_state = result.trajectory_start.joint_state
+    start_positions = dict(zip(start_state.name, start_state.position))
+    
+    logger = node.get_logger()
+    logger.info('--- Trajectory metrics ---')
+
+    missing = (name for name in names if name not in start_positions)
+    if missing: 
+        logger.warning(
+            f'Start state is missing joints: {", ".join(missing)}'
+        )
+        
+    for index, name in enumerate(names):
+        first_deg = math.degrees(points[0].positions[index])
+        
+        if name in start_positions:
+            start_deg = math.degrees(start_positions[name])
+            logger.info(
+                f'{name}: start={start_deg:.3f} deg'
+                f'first trajectory point={first_deg:.3f} deg'
+            )
+            
+        else: 
+            logger.info(
+                f'{name}: start=unknown, '
+                f'first trajectory point={first_deg:.3f} deg'
+            )
+
+    last_time = points[-1].time_from_start
+    duration = last_time.sec + last_time.nanosec * 1e-9
+    
+    travel_per_joint = [0.0] * len(names)
+    
+    
+    for previous, current in zip(points, points[1:]):
+        for index in range(len(names)):
+            travel_per_joint[index] += abs(
+                current.positions[index] - previous.positions[index]
+            )
+            
+    total_travel = sum(travel_per_joint)
+    
+    
+    logger.info(f'Planned trajectory duration: {duration:.3f} s')
+    logger.info(
+        f'Total joint travel: {total_travel:.3f} rad '
+        f'({math.degrees(total_travel):.1f} deg summed across joints)'
+    )
+
+    for name, travel in zip(names, travel_per_joint):
+        logger.info(
+            f'{name}: accummulated travel={math.degrees(travel):.1f} deg.'
+        )
+    logger.info('--- End of trajectory metrics ---')
 
 
 def plan_to_target(node, transform):
@@ -165,6 +236,7 @@ def main(args=None):
         node = TargetReader()
         target = node.read_target()
         result = plan_to_target(node, target)
+        log_trajectory_metrics(node, result)
         show_trajectory(node, result)
     except (ValueError, RuntimeError) as error:
         if node is not None:

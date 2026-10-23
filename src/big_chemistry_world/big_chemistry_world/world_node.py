@@ -26,6 +26,204 @@ class WorldNode(Node):
         self.declare_parameter('collision_reference_frame', 'world')
         self.config_tf_buffer = Buffer()
         
+        self.scene_ready = False
+        self.config_transforms = []
+        self.pending_scene_update = None
+        
+        self.scene_update_client = self.create_client(
+            ApplyPlanningScene,
+            '/apply_planning_scene',
+        )
+        
+        self.latest_tag_pose = None
+        
+        self.tag_pose_subscription = self.create_subscription(
+            PoseStamped,
+            'test_tag/pose',
+            self.on_tag_pose,
+            10,
+        )
+    
+    def on_tag_pose(self, message):
+        expected_frame = self.config['world_frame']
+        
+        if message.header.frame_id != expected_frame:
+            self.get_logger().warning(
+                f'Tag pose rejected: expected frame "{expected_frame}", '
+                f'got "{message.header.frame_id}".'
+            )   
+            return
+        
+        p = message.pose.position
+        q = message.pose.orientation
+        
+        
+        values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+        if not all(math.isfinite(value) for value in values):
+            self.get_logger().warning(
+                 'Tag pose rejected: position and orientation must be finite.'
+            )
+            return
+                  
+        
+        norm = math.hypot(q.x, q.y, q.z, q.w)
+        if not math.isfinite(norm) or abs(norm - 1.0) > 0.01:
+            self.get_logger().warning(
+                'Tag pose rejected: quaternion must have unit length.'
+            )
+            return
+        
+        accepted = deepcopy(message)
+        
+        rotation = accepted.pose.orientation
+        rotation.x /= norm
+        rotation.y /= norm
+        rotation.z /= norm
+        rotation.w /= norm
+
+        self.latest_tag_pose = accepted
+        self.request_tag_update(accepted)
+
+        self.get_logger().info(
+            f'Tag pose received in "{expected_frame}": '
+            f'x={p.x:.3f}, y={p.y:.3f}, z={p.z:.3f}. '
+            'Stored only; planning scene unchanged.'
+        )
+
+
+    def request_tag_update(self, pose):
+        if not self.scene_ready:
+            self.get_logger().warning(
+                'Tag update rejected: scene is not ready.'
+            )
+            return
+        
+        if self.pending_scene_update is not None: 
+            self.get_logger().warning(
+                'Tag update rejected: another update is still pending.'
+            )
+            return
+        
+        if not self.scene_update_client.service_is_ready():
+            self.get_logger().warning(
+                'Tag update rejected: MoveIt service is unavailable.'
+            )
+            return
+        
+        candidate_transforms = deepcopy(self.config_transforms)
+        
+        tag_transforms = [
+            transform
+            for transform in candidate_transforms
+            if transform.child_frame_id == 'test_tag'
+        ]
+        
+        if len(tag_transforms) != 1:
+            self.get_logger().error(
+                'Expected exactly one configured test_tag frame.'
+            )
+            return
+        
+        tag_transform = tag_transforms[0]
+        
+        if tag_transform.header.frame_id != pose.header.frame_id:
+            self.get_logger().error(
+                'Tag update rejected: measurement frame does not match '
+                'the configured parent of test_tag.'
+            ) 
+            return
+        
+        tag_transform.header.stamp = self.get_clock().now().to_msg()
+        tag_transform.transform.translation.x = pose.pose.position.x
+        tag_transform.transform.translation.y = pose.pose.position.y
+        tag_transform.transform.translation.z = pose.pose.position.z
+        tag_transform.transform.rotation = deepcopy(pose.pose.orientation)
+        
+        candidate_buffer = Buffer()
+        
+        for transform in candidate_transforms:
+            candidate_buffer.set_transform_static(
+                transform,
+                'big_chemistry_world_candidate'
+            )
+            
+        previous_buffer = self.config_tf_buffer
+        
+        try: 
+            self.config_tf_buffer = candidate_buffer
+            objects = self.prepare_scene_objects()
+        except(RuntimeError, ValueError, TransformException) as error:
+            self.get_logger().error(
+                f'Cannot prepare tag update: {error}'
+            )
+            return
+        finally:
+            self.config_tf_buffer = previous_buffer
+            
+        request = ApplyPlanningScene.Request()
+        request.scene.is_diff = True
+        request.scene.robot_state.is_diff = True
+        request.scene.world.collision_objects = objects
+
+        try:
+            future = self.scene_update_client.call_async(request)
+        except Exception as error: 
+            self.scene_ready = False
+            self.get_logger().error(
+                f'Could not send scene update: {error}. '
+                'Scene state is unconfirmed. Restart MoveIt and world_node.'
+            )            
+            return
+        
+        self.pending_scene_update = (
+            future,
+            candidate_transforms,
+            candidate_buffer,
+        )
+        
+        self.get_logger().info(
+            'Applying tag update to MoveIt. '
+            'Wait for confirmation before requesting a plan.'
+        )
+        
+        future.add_done_callback(self.finish_tag_update)
+        
+    def finish_tag_update(self, future):
+        pending = self.pending_scene_update
+        
+        if pending is None or pending[0] is not future:
+            return
+        
+        _, candidate_transforms, candidate_buffer = pending
+    
+        try: 
+            response = future.result()
+            
+            if response is None or not response.success:
+                raise RuntimeError(
+                    'MoveIt did not confirm the scene update.'
+                )        
+
+            self.config_tf_buffer = candidate_buffer
+            self.config_transforms = candidate_transforms
+            
+            self.tf_broadcaster.sendTransform(candidate_transforms)
+            
+        except Exception as error:
+            self.scene_ready = False
+            self.get_logger().error(
+                f'Tag update failed: {error}. '
+                'Scene state is unconfirmed; do not request a plan. '
+                'Restart MoveIt and world_node before continuing.'
+            )
+        else:
+            self.get_logger().info(
+                'Tag update applied: collision objects and target frames '
+                'updated. Ready for a new planning request.'
+            )
+        finally:
+            self.pending_scene_update = None
+
     def load_config(self):
         config_path = Path(
             self.get_parameter('config_path').value).expanduser()
@@ -119,6 +317,8 @@ class WorldNode(Node):
             rotation.w = cr * cp * cy + sr * sp * sy
 
             transforms.append(transform)
+
+        self.config_transforms = deepcopy(transforms)
 
         for transform in transforms:
             self.config_tf_buffer.set_transform_static(
@@ -265,6 +465,8 @@ def main(args=None):
             )
             
             node.apply_collision_objects()
+            
+            node.scene_ready = True
             
         except (OSError, ValueError, yaml.YAMLError, RuntimeError) as error: 
             node.get_logger().error(

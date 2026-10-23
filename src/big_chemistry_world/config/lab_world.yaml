@@ -8,22 +8,28 @@ frames:
     translation: [0.0, 0.0, 0.0]
     rotation_rpy: [0.0, 0.0, 0.0]
 
+  # Szimulált taghelyzet a labor koordinátarendszerében.
   - parent: lab_world
-    child: test_device
-    translation: [0.133160748727, -0.255, 0.182]
-    rotation_rpy: [0.0, 0.0, -1.57079632679]
+    child: test_tag
+    translation: [0.153160748727, -0.255, 0.182]
+    rotation_rpy: [0.0, 0.0, -1.48352986419]
 
-  - parent: lab_world
-    child: test_pickup
-    translation: [0.231160748727, -0.352485234158, 0.285373975056]
+  # Ideiglenesen a tag és az eszköz origója, tengelyei egybeesnek.
+  - parent: test_tag
+    child: test_device
+    translation: [0.0, 0.0, 0.0]
     rotation_rpy: [0.0, 0.0, 0.0]
+
+  # A korábbi felvételi referencia az eszközhöz viszonyítva.
+  - parent: test_device
+    child: test_pickup
+    translation: [0.09748523415848, 0.09799999999952, 0.103373975056]
+    rotation_rpy: [0.0, 0.0, 1.57079632679]
 
   - parent: test_pickup
     child: test_tool_goal
     translation: [0.0, 0.0, 0.0]
     rotation_rpy: [3.092677130111, 0.029176729897, -0.037457111126]
-
-
 
 collision_objects:
   - id: opening_left_wall
@@ -53,4 +59,27 @@ collision_objects:
     dimensions: [0.04, 0.92, 0.08]
     position: [0.02, 0.00, -0.04]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+
+
+#frames:
+#  - parent: lab_world
+#    child: world
+#    translation: [0.0, 0.0, 0.0]
+#    rotation_rpy: [0.0, 0.0, 0.0]
+#
+#  - parent: lab_world
+#    child: test_device
+#    translation: [0.133160748727, -0.255, 0.182]
+#    rotation_rpy: [0.0, 0.0, -1.57079632679]
+#
+#  - parent: lab_world
+#    child: test_pickup
+#    translation: [0.231160748727, -0.352485234158, 0.285373975056]
+#    rotation_rpy: [0.0, 0.0, 0.0]
+#
+#  - parent: test_pickup
+#    child: test_tool_goal
+#    translation: [0.0, 0.0, 0.0]
+#    rotation_rpy: [3.092677130111, 0.029176729897, -0.037457111126]
   

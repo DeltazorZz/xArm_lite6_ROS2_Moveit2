@@ -12,7 +12,7 @@ from moveit_msgs.srv import ApplyPlanningScene
 from copy import deepcopy
 import tf2_geometry_msgs  
 from tf2_ros import Buffer, TransformException
-
+from std_srvs.srv import Trigger
 
 class WorldNode(Node):
     def __init__(self):
@@ -42,6 +42,14 @@ class WorldNode(Node):
             'test_tag/pose',
             self.on_tag_pose,
             10,
+        )
+        
+        self.position_check_requested = False
+        
+        self.position_check_service = self.create_service(
+            Trigger,
+            '/big_chemistry_world/position_check',
+            self.on_position_check,
         )
     
     def on_tag_pose(self, message):
@@ -82,13 +90,18 @@ class WorldNode(Node):
         rotation.w /= norm
 
         self.latest_tag_pose = accepted
-        self.request_tag_update(accepted)
-
+        if not self.position_check_requested:
+            self.get_logger().info(
+                'Tag measurement stored. No position check requested.'
+            )
+            return
+        self.position_check_requested = False
+        
         self.get_logger().info(
-            f'Tag pose received in "{expected_frame}": '
-            f'x={p.x:.3f}, y={p.y:.3f}, z={p.z:.3f}. '
-            'Stored only; planning scene unchanged.'
+            'New tag measurement received for position check.'
         )
+        
+        self.request_tag_update(accepted)
 
 
     def request_tag_update(self, pose):
@@ -223,7 +236,32 @@ class WorldNode(Node):
             )
         finally:
             self.pending_scene_update = None
+            
+    def on_position_check(self, request, response):
+        if not self.scene_ready:
+            response.success = False
+            response.message = 'Planning scene is not ready.'
+            return response
+            
+        if (
+            self.position_check_requested
+            or self.pending_scene_update is not None
+        ):
+            response.success = False
+            response.message = 'A position check is already pending.'
+            return response
 
+
+        self.position_check_requested = True
+        
+        response.success = True
+        response.message = ('Position check started. Waiting for a new valid tag message. '
+            'This does not mean the scene update has completed.'      
+        )      
+        
+        self.get_logger().info(response.message)
+        return response    
+            
     def load_config(self):
         config_path = Path(
             self.get_parameter('config_path').value).expanduser()

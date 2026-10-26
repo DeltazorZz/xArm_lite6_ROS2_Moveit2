@@ -1,6 +1,7 @@
 import rclpy
 import math
-
+import json
+from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import (
     Constraints,
@@ -18,6 +19,78 @@ import time
 from moveit_msgs.msg import DisplayTrajectory
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
+def check_planning_ready(node):
+    client = node.create_client(
+        Trigger,
+        '/big_chemistry_world/position_check_status',
+    )
+    
+    try: 
+        if not client.wait_for_service(timeout_sec=5.0):
+            raise RuntimeError(
+                'World status service is unavailable. Planning blocked.'
+            )
+        
+        future = client.call_async(Trigger.Request())
+        rclpy.spin_until_future_complete(
+            node,
+            future,
+            timeout_sec=5.0,
+        )
+        
+        if not future.done():
+            future.cancel()
+            raise RuntimeError(
+                'Timed out waiting for world status. Planning blocked.'
+            )
+
+        if future.cancelled():
+            raise RuntimeError('World status request was cancelled.')
+        
+        if future.exception() is not None:
+            raise RuntimeError(
+                  f'World status request failed: {future.exception()}'
+            )
+            
+        response = future.result()
+        
+        if response is None or not response.success:
+            raise RuntimeError(
+                 'Could not query world status. Planning blocked.'
+            )    
+            
+        try:
+            status = json.loads(response.message)    
+        except json.JSONDecodeError as error: 
+            raise RuntimeError(
+                'World status response is not valid JSON.'
+            )from error
+            
+        if not isinstance (status, dict):
+            raise RuntimeError(
+                'World status response must be a JSON object.'
+            )
+            
+        if (
+            status.get('scene_confirmed') is not True
+            or status.get('planning_ready') is not True
+        ):
+            raise RuntimeError(
+                f'Planning blocked: state={status.get("state")}, '
+                f'detail={status.get("detail")}'
+            )
+            
+        node.get_logger().info(
+            f'World ready for planning. '
+            f'Position check #{status.get("check_id")}: '
+            f'{status.get("state")}.'
+        ) 
+        
+        return status
+    
+    finally:
+        node.destroy_client(client)
+        
 def log_trajectory_metrics(node, result): 
     trajectory = result.trajectory.joint_trajectory
     names = list(trajectory.joint_names)
@@ -234,6 +307,7 @@ def main(args=None):
 
     try:
         node = TargetReader()
+        check_planning_ready(node)
         target = node.read_target()
         result = plan_to_target(node, target)
         log_trajectory_metrics(node, result)

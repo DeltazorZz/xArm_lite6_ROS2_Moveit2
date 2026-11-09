@@ -1,168 +1,25 @@
 import rclpy
-import math
-import json
-from std_srvs.srv import Trigger
-from geometry_msgs.msg import Pose
-from moveit_msgs.msg import (
-    Constraints,
-    MoveItErrorCodes,
-    OrientationConstraint,
-    PositionConstraint,
-)
-from moveit_msgs.srv import GetMotionPlan
-from shape_msgs.msg import SolidPrimitive
-
 from big_chemistry_motion.target_reader import TargetReader
+from big_chemistry_motion.motion_goals import (build_home_goal, build_target_goal)
+from big_chemistry_motion.trajectory_tools import (
+    log_trajectory_metrics,
+    show_trajectory,
+)
+from big_chemistry_motion.motion_checks import (
+    check_planning_ready,
+    check_execution_start,
+)
+from big_chemistry_motion.trajectory_execution import (
+    execute_reviewed_trajectory,
+)
 
-import time
-
-from moveit_msgs.msg import DisplayTrajectory
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
-
-def check_planning_ready(node):
-    client = node.create_client(
-        Trigger,
-        '/big_chemistry_world/position_check_status',
-    )
-    
-    try: 
-        if not client.wait_for_service(timeout_sec=5.0):
-            raise RuntimeError(
-                'World status service is unavailable. Planning blocked.'
-            )
-        
-        future = client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(
-            node,
-            future,
-            timeout_sec=5.0,
-        )
-        
-        if not future.done():
-            future.cancel()
-            raise RuntimeError(
-                'Timed out waiting for world status. Planning blocked.'
-            )
-
-        if future.cancelled():
-            raise RuntimeError('World status request was cancelled.')
-        
-        if future.exception() is not None:
-            raise RuntimeError(
-                  f'World status request failed: {future.exception()}'
-            )
-            
-        response = future.result()
-        
-        if response is None or not response.success:
-            raise RuntimeError(
-                 'Could not query world status. Planning blocked.'
-            )    
-            
-        try:
-            status = json.loads(response.message)    
-        except json.JSONDecodeError as error: 
-            raise RuntimeError(
-                'World status response is not valid JSON.'
-            )from error
-            
-        if not isinstance (status, dict):
-            raise RuntimeError(
-                'World status response must be a JSON object.'
-            )
-            
-        if (
-            status.get('scene_confirmed') is not True
-            or status.get('planning_ready') is not True
-        ):
-            raise RuntimeError(
-                f'Planning blocked: state={status.get("state")}, '
-                f'detail={status.get("detail")}'
-            )
-            
-        node.get_logger().info(
-            f'World ready for planning. '
-            f'Position check #{status.get("check_id")}: '
-            f'{status.get("state")}.'
-        ) 
-        
-        return status
-    
-    finally:
-        node.destroy_client(client)
-        
-def log_trajectory_metrics(node, result): 
-    trajectory = result.trajectory.joint_trajectory
-    names = list(trajectory.joint_names)
-    points = trajectory.points
-
-    if not names or not points: 
-        raise ValueError('Cannot measure an empty trajectory.')
-    
-    for point in points: 
-        if len(point.positions) != len(names):
-            raise ValueError('Trajectory joint positions are incompleate.')
-        
-        if not all(math.isfinite(value) for value in point.positions):
-            raise ValueError('Trajectory contains non-finite joint positions.')
-        
-    start_state = result.trajectory_start.joint_state
-    start_positions = dict(zip(start_state.name, start_state.position))
-    
-    logger = node.get_logger()
-    logger.info('--- Trajectory metrics ---')
-
-    missing = (name for name in names if name not in start_positions)
-    if missing: 
-        logger.warning(
-            f'Start state is missing joints: {", ".join(missing)}'
-        )
-        
-    for index, name in enumerate(names):
-        first_deg = math.degrees(points[0].positions[index])
-        
-        if name in start_positions:
-            start_deg = math.degrees(start_positions[name])
-            logger.info(
-                f'{name}: start={start_deg:.3f} deg'
-                f'first trajectory point={first_deg:.3f} deg'
-            )
-            
-        else: 
-            logger.info(
-                f'{name}: start=unknown, '
-                f'first trajectory point={first_deg:.3f} deg'
-            )
-
-    last_time = points[-1].time_from_start
-    duration = last_time.sec + last_time.nanosec * 1e-9
-    
-    travel_per_joint = [0.0] * len(names)
-    
-    
-    for previous, current in zip(points, points[1:]):
-        for index in range(len(names)):
-            travel_per_joint[index] += abs(
-                current.positions[index] - previous.positions[index]
-            )
-            
-    total_travel = sum(travel_per_joint)
-    
-    
-    logger.info(f'Planned trajectory duration: {duration:.3f} s')
-    logger.info(
-        f'Total joint travel: {total_travel:.3f} rad '
-        f'({math.degrees(total_travel):.1f} deg summed across joints)'
-    )
-
-    for name, travel in zip(names, travel_per_joint):
-        logger.info(
-            f'{name}: accummulated travel={math.degrees(travel):.1f} deg.'
-        )
-    logger.info('--- End of trajectory metrics ---')
+from moveit_msgs.msg import MoveItErrorCodes
+from moveit_msgs.srv import GetMotionPlan
 
 
-def plan_to_target(node, transform):
+
+
+def plan_to_target(node, transform=None):
     client = node.create_client(
         GetMotionPlan,
         '/plan_kinematic_path',
@@ -171,59 +28,29 @@ def plan_to_target(node, transform):
     try:
         if not client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError('MoveIt planning service is unavailable.')
-
-        reference_frame = transform.header.frame_id
-        goal_link = 'link_eef'
-
-        # Allow the link origin within a sphere of radius 5 mm.
-        region = SolidPrimitive()
-        region.type = SolidPrimitive.SPHERE
-        region.dimensions = [0.005]
-
-        region_pose = Pose()
-        region_pose.position.x = transform.transform.translation.x
-        region_pose.position.y = transform.transform.translation.y
-        region_pose.position.z = transform.transform.translation.z
-        region_pose.orientation.w = 1.0
-
-        position = PositionConstraint()
-        position.header.frame_id = reference_frame
-        position.link_name = goal_link
-        position.constraint_region.primitives = [region]
-        position.constraint_region.primitive_poses = [region_pose]
-        position.weight = 1.0
-
-        # Orientation tolerance: 0.05 rad, approximately 2.9 degrees.
-        orientation = OrientationConstraint()
-        orientation.header.frame_id = reference_frame
-        orientation.link_name = goal_link
-        orientation.orientation = transform.transform.rotation
-        orientation.absolute_x_axis_tolerance = 0.05
-        orientation.absolute_y_axis_tolerance = 0.05
-        orientation.absolute_z_axis_tolerance = 0.05
-        orientation.weight = 1.0
-
-        goal = Constraints()
-        goal.name = 'device_relative_target'
-        goal.position_constraints = [position]
-        goal.orientation_constraints = [orientation]
+        if transform is None:
+            goal = build_home_goal()
+        else: 
+          goal = build_target_goal(transform)
 
         request = GetMotionPlan.Request()
         motion_request = request.motion_plan_request
         motion_request.group_name = 'lite6'
+        motion_request.pipeline_id = 'ompl'
+        motion_request.planner_id = 'RRTConnect'
         motion_request.start_state.is_diff = True
         motion_request.goal_constraints = [goal]
-        motion_request.num_planning_attempts = 5
-        motion_request.allowed_planning_time = 5.0
+        motion_request.num_planning_attempts = 10
+        motion_request.allowed_planning_time = 30.0
         motion_request.max_velocity_scaling_factor = 0.1
         motion_request.max_acceleration_scaling_factor = 0.1
 
         node.get_logger().info(
-            f'Requesting plan for lite6 / {goal_link}. No execution.'
+            f'Requesting plan for lite6 / {goal.name}. No execution.'
         )
 
         future = client.call_async(request)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=motion_request.allowed_planning_time + 10.0)
 
         if not future.done():
             future.cancel()
@@ -257,48 +84,7 @@ def plan_to_target(node, transform):
 
     finally:
         node.destroy_client(client)
-
-def show_trajectory(node, result):
-    qos = QoSProfile(
-        depth=1,
-        reliability=ReliabilityPolicy.RELIABLE,
-        durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    )
-
-    publisher = node.create_publisher(
-        DisplayTrajectory,
-        '/display_planned_path',
-        qos,
-    )
-
-    node.get_logger().info('Waiting for a trajectory display subscriber...')
-
-    deadline = time.monotonic() + 10.0
-
-    while rclpy.ok() and publisher.get_subscription_count() == 0:
-        if time.monotonic() >= deadline:
-            raise RuntimeError(
-                'No trajectory display subscriber found. '
-                'Check the RViz Planned Path display.'
-            )
-
-        rclpy.spin_once(node, timeout_sec=0.1)
-
-    if not rclpy.ok():
-        return
-
-    display = DisplayTrajectory()
-    display.trajectory_start = result.trajectory_start
-    display.trajectory = [result.trajectory]
-
-    publisher.publish(display)
-
-    node.get_logger().info(
-        'Trajectory preview published. No execution. '
-        'Press Ctrl+C to close this node.'
-    )
-
-    rclpy.spin(node)
+        
 
 
 def main(args=None):
@@ -307,11 +93,45 @@ def main(args=None):
 
     try:
         node = TargetReader()
-        check_planning_ready(node)
-        target = node.read_target()
-        result = plan_to_target(node, target)
+        node.declare_parameter('execute', False)
+        node.declare_parameter('motion_goal', 'target')
+        node.declare_parameter('gripper_empty_confirmed', False)
+
+        motion_goal = node.get_parameter('motion_goal').value
+
+        if motion_goal not in ('target', 'home'):
+            raise ValueError('motion_goal must be "target" or "home".')
+
+        if motion_goal == 'home':
+            if not node.get_parameter('gripper_empty_confirmed').value:
+                raise ValueError(
+                    'Home requires an empty gripper. '
+                    'Set gripper_empty_confirmed:=true after checking.'
+                )
+
+        planned_world_status = check_planning_ready(node)
+
+        if motion_goal == 'home':
+            result = plan_to_target(node)
+        else:
+            target = node.read_target()
+            result = plan_to_target(node, target)
+            
         log_trajectory_metrics(node, result)
-        show_trajectory(node, result)
+        preview_publisher = show_trajectory(node, result)
+
+        if node.get_parameter('execute').value:
+            execute_reviewed_trajectory(
+                node,
+                result,
+                planned_world_status,
+            )
+        else:
+            check_execution_start(node, result)
+            node.get_logger().info(
+                'Preview only. Press Ctrl+C to close.'
+            )
+            rclpy.spin(node)
     except (ValueError, RuntimeError) as error:
         if node is not None:
             node.get_logger().error(str(error))

@@ -26,3 +26,9 @@ Thumbs.db
 
 # External xArm repository, managed separately
 /src/xarm_ros2/
+
+
+# Local diagnostics and instrumentation scripts
+/c60_diagnostics/
+/diagnostics/
+/install_read_timing.py

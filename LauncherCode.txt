@@ -1,0 +1,325 @@
+BIG CHEMISTRY — ROS 2 PARANCSOK
+
+============================================================
+1. TERMINÁL KÖRNYEZET
+============================================================
+
+Minden új terminálban:
+
+source /opt/ros/humble/setup.bash
+source ~/xarm_humble_ws/install/local_setup.bash
+
+
+============================================================
+2. BUILD — KÓDMÓDOSÍTÁS UTÁN
+============================================================
+
+cd ~/xarm_humble_ws
+colcon build --packages-select big_chemistry_motion
+source install/local_setup.bash
+
+colcon build --packages-select big_chemistry_world
+============================================================
+3. REAL LAUNCH
+============================================================
+
+Ethernet-kapcsolattal.
+A fake launch ne fusson mellette!
+Ezt a terminált hagyd futva.
+
+ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py \
+  robot_ip:=192.168.1.160 \
+  add_gripper:=true
+
+
+============================================================
+4. FAKE LAUNCH
+============================================================
+
+A real launch ne fusson mellette!
+Ezt a terminált hagyd futva.
+
+ros2 launch xarm_moveit_config lite6_moveit_fake.launch.py \
+  add_gripper:=true
+
+
+============================================================
+5. WORLD NODE
+============================================================
+
+A kiválasztott real vagy fake launch mellett,
+külön terminálban indítsd, és hagyd futva.
+
+ros2 launch big_chemistry_world world.launch.py
+
+
+============================================================
+6. CONTROLLER ÁLLAPOTÁNAK ELLENŐRZÉSE
+============================================================
+
+ros2 service call /controller_manager/list_controllers \
+  controller_manager_msgs/srv/ListControllers "{}"
+
+Elvárt:
+lite6_traj_controller állapota: active
+
+
+============================================================
+7. TARGET TERVEZÉS — CSAK ELŐNÉZET
+============================================================
+
+A robotot nem mozgatja.
+Az előnézetet Ctrl+C-vel zárhatod be.
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=target \
+  -p target_frame:=test_approach_goal \
+  -p execute:=false
+
+
+============================================================
+8. TARGET TERVEZÉS ÉS VÉGREHAJTÁS
+============================================================
+
+Új tervet készít, és megjeleníti RVizben.
+Átnézés után az EXECUTE szóval hagyható jóvá.
+Real launch esetén a valódi robot mozog!
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=target \
+  -p target_frame:=test_approach_goal \
+  -p execute:=true
+
+
+============================================================
+9. HOME TERVEZÉS — CSAK ELŐNÉZET
+============================================================
+
+A gripper legyen üres!
+A gripper_empty_confirmed kézi megerősítés, nem szenzoros ellenőrzés.
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=home \
+  -p gripper_empty_confirmed:=true \
+  -p execute:=false
+
+
+============================================================
+10. HOME TERVEZÉS ÉS VÉGREHAJTÁS
+============================================================
+
+A gripper legyen üres!
+RViz-ellenőrzés után EXECUTE jóváhagyás szükséges.
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=home \
+  -p gripper_empty_confirmed:=true \
+  -p execute:=true
+
+
+============================================================
+11. FAKE GRIPPER CONTROLLER BETÖLTÉSE
+============================================================
+
+Kizárólag futó fake launch mellett!
+Real launchhoz nem kell.
+A fake launch újraindítása után újra be kell tölteni.
+
+ros2 run controller_manager spawner lite6_fake_gripper_controller \
+  -c /controller_manager \
+  -t position_controllers/GripperActionController \
+  -p ~/xarm_humble_ws/lite6_fake_gripper.yaml
+
+
+============================================================
+12. FAKE GRIPPER NYITÁS
+============================================================
+
+Aktív fake gripper controller szükséges.
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=fake \
+  -p command:=open
+
+
+============================================================
+13. FAKE GRIPPER ÜRES ZÁRÁS
+============================================================
+
+Csak üres gripperrel, a plate-től távol.
+A 0.0 teljes összezárást jelent, nem plate-megfogási pozíciót.
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=fake \
+  -p command:=close \
+  -p fake_position:=0.0
+
+
+============================================================
+14. FAKE GRIPPER STOP
+============================================================
+
+A fake gripper action céljainak megszakítását kéri.
+A cancel-kérés elfogadása nem igazolja a megállás befejezését.
+A kart nem állítja meg.
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=fake \
+  -p command:=stop
+
+
+============================================================
+15. REAL GRIPPER — SAJÁT MODUL
+============================================================
+
+Futó real launch és elérhető gripper service-ek szükségesek.
+Nyitás és zárás előtt EXECUTE jóváhagyást kér.
+A sikeres service-válasz önmagában nem igazolja a plate megfogását.
+
+NYITÁS:
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=real \
+  -p command:=open
+
+
+ZÁRÁS:
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=real \
+  -p command:=close
+
+
+STOP — NINCS INTERAKTÍV JÓVÁHAGYÁS:
+
+ros2 run big_chemistry_motion gripper_command --ros-args \
+  -p gripper_backend:=real \
+  -p command:=stop
+
+Ez csak a gripper stopja, nem a robotkar vészleállítása.
+
+
+============================================================
+16. REAL GRIPPER — KÖZVETLEN SERVICE-HÍVÁSOK
+============================================================
+
+Ezek megkerülik a saját modul ellenőrzéseit és jóváhagyását.
+Azonnal elküldik a parancsot!
+
+NYITÁS:
+
+ros2 service call /ufactory/open_lite6_gripper \
+  xarm_msgs/srv/Call "{}"
+
+
+ZÁRÁS:
+
+ros2 service call /ufactory/close_lite6_gripper \
+  xarm_msgs/srv/Call "{}"
+
+
+STOP:
+
+ros2 service call /ufactory/stop_lite6_gripper \
+  xarm_msgs/srv/Call "{}"
+
+
+============================================================
+17. GRIPPER SERVICE-EK LISTÁZÁSA
+============================================================
+
+ros2 service list -t | grep lite6_gripper
+
+
+============================================================
+18. MOVEIT ROBOTÁLLAPOT LEKÉRDEZÉSE
+============================================================
+
+ros2 service call /get_planning_scene \
+  moveit_msgs/srv/GetPlanningScene \
+  "{components: {components: 2}}"
+
+
+============================================================
+JELENLEGI MŰKÖDÉS
+============================================================
+
+- A planning még nem nyitja vagy zárja automatikusan a grippert.
+- Az execute:=true minden indításkor új tervet készít.
+- A végrehajtás az adott futásban megjelenített tervet használja.
+- A gripper_backend kiválasztja a gripper vezérlését;
+  nem váltja át a futó robot launchot real és fake között.
+- A teljes plate carry még nincs integrálva.
+- A fake nyitás és üres zárás tesztelve.
+- Az új real gripper modul és a mozgás közbeni fake stop
+  tesztelése még hátravan.
+
+
+Temporary: 
+cd ~/xarm_humble_ws
+colcon build --packages-select big_chemistry_motion
+source install/setup.bash
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=cartesian \
+  -p target_frame:=test_tool_goal \
+  -p execute:=false
+
+Reversed cartesian path planning:
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=cartesian \
+  -p cartesian_phase:=lift \
+  -p target_frame:=test_approach_goal \
+  -p execute:=false
+
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=cartesian \
+  -p cartesian_phase:=lift \
+  -p target_frame:=test_approach_goal \
+  -p execute:=false
+
+  Attach plate: 
+  ros2 service call /apply_planning_scene moveit_msgs/srv/ApplyPlanningScene \
+'{
+  scene: {
+    is_diff: true,
+    robot_state: {
+      is_diff: true,
+      attached_collision_objects: [
+        {
+          link_name: link_eef,
+          object: {
+            id: plate_base,
+            operation: !!binary "AA=="
+          },
+          touch_links: [uflite_finger1, uflite_finger2]
+        },
+        {
+          link_name: link_eef,
+          object: {
+            id: plate_body,
+            operation: !!binary "AA=="
+          },
+          touch_links: [uflite_finger1, uflite_finger2]
+        }
+      ]
+    }
+  }
+}'
+
+
+
+ros2 run big_chemistry_motion plan_to_target --ros-args \
+  -p motion_goal:=pickup_fake \
+  -p precheck_approach_strategy:=seeded_ik \
+  -p target_frame:=test_approach_goal \
+  -p pickup_frame:=test_tool_goal \
+  -p lift_frame:=test_lift_tool_goal \
+  -p carry_frame:=test_exit_tool_goal \
+  -p carry_planner:=joint_via \
+  -p carry_via_offset_deg:=10.0 \
+  -p carry_shoulder_bend_rad:=0.045 \
+  -p gripper_backend:=fake \
+  -p cartesian_phase:=pickup \
+  -p execute:=true

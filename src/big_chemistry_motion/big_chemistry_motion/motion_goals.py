@@ -61,9 +61,9 @@ def build_target_goal(transform):
     orientation.header.frame_id = reference_frame
     orientation.link_name = goal_link
     orientation.orientation = transform.transform.rotation
-    orientation.absolute_x_axis_tolerance = 0.05
-    orientation.absolute_y_axis_tolerance = 0.05
-    orientation.absolute_z_axis_tolerance = 0.05
+    orientation.absolute_x_axis_tolerance = 0.005
+    orientation.absolute_y_axis_tolerance = 0.005
+    orientation.absolute_z_axis_tolerance = 0.005
     orientation.weight = 1.0
 
     goal = Constraints()
@@ -72,3 +72,44 @@ def build_target_goal(transform):
     goal.orientation_constraints = [orientation]
     
     return goal
+
+def build_diagnostic_joint_goal():
+    # Az előző, ütközésellenőrzött IK-lekérdezés eredménye.
+    # Csak az akkori test_tool_goal vizsgálatához.
+    joint_positions = {
+        'joint1': -0.9975575080382395,
+        'joint2': 1.1376874331830829,
+        'joint3': 2.479148684399614,
+        'joint4': 0.000005177378247140018,
+        'joint5': 1.3414539053600996,
+        'joint6': -0.9975336626521848,
+    }
+
+    goal = Constraints()
+    goal.name = 'diagnostic_joint_goal'
+
+    for joint_name, position in joint_positions.items():
+        joint = JointConstraint()
+        joint.joint_name = joint_name
+        joint.position = position
+        joint.tolerance_above = 0.001
+        joint.tolerance_below = 0.001
+        joint.weight = 1.0
+        goal.joint_constraints.append(joint)
+
+    return goal
+
+
+def build_target_pose(transform):
+    pose = Pose()
+
+    pose.position.x = transform.transform.translation.x
+    pose.position.y = transform.transform.translation.y
+    pose.position.z = transform.transform.translation.z
+
+    pose.orientation.x = transform.transform.rotation.x
+    pose.orientation.y = transform.transform.rotation.y
+    pose.orientation.z = transform.transform.rotation.z
+    pose.orientation.w = transform.transform.rotation.w
+
+    return pose

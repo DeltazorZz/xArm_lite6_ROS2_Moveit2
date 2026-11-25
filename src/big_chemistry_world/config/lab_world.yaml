@@ -11,8 +11,8 @@ frames:
   # Szimulált taghelyzet a labor koordinátarendszerében.
   - parent: lab_world
     child: test_tag
-    translation: [0.153160748727, -0.255, 0.182]
-    rotation_rpy: [0.0, 0.0, -1.48352986419]
+    translation: [0.128, -0.256, 0.180]
+    rotation_rpy: [0.0, 0.0, -1.57079632679]
 
   # Ideiglenesen a tag és az eszköz origója, tengelyei egybeesnek.
   - parent: test_tag
@@ -20,66 +20,152 @@ frames:
     translation: [0.0, 0.0, 0.0]
     rotation_rpy: [0.0, 0.0, 0.0]
 
+  - parent: test_device
+    child: pickup_surface
+    translation: [0.0995, 0.1015, 0.020]
+    rotation_rpy: [0.0, 0.0, 0.0]
+
   # A korábbi felvételi referencia az eszközhöz viszonyítva.
   - parent: test_device
     child: test_pickup
-    translation: [0.09748523415848, 0.09799999999952, 0.103373975056]
+    translation: [0.0995, 0.1015, 0.118]
     rotation_rpy: [0.0, 0.0, 1.57079632679]
 
   - parent: test_pickup
     child: test_tool_goal
     translation: [0.0, 0.0, 0.0]
-    rotation_rpy: [3.092677130111, 0.029176729897, -0.037457111126]
+    rotation_rpy: [3.14159265359, 0.0, 0.0]
 
+  - parent: test_pickup
+    child: test_approach_goal
+    translation: [0.0, 0.0, 0.015]
+    rotation_rpy: [3.14159265359, 0.0, 0.0]
+
+  - parent: test_pickup
+    child: test_lift_tool_goal
+    translation: [0.0, 0.0, 0.0165]
+    rotation_rpy: [3.14159265359, 0.0, 0.0]
+
+  - parent: test_pickup
+    child: test_exit_tool_goal
+    translation: [0.0, 0.180, 0.0165]
+    rotation_rpy: [3.14159265359, 0.0, 0.0]
+    
 collision_objects:
   - id: opening_left_wall
     frame_id: test_device
     type: box
-    dimensions: [0.04, 0.20, 0.27]
-    position: [0.02, 0.36, 0.135]
+    dimensions: [0.04, 0.083, 0.275]
+    position: [0.02, 0.2930, 0.1375]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
   - id: opening_right_wall
     frame_id: test_device
     type: box
-    dimensions: [0.04, 0.20, 0.27]
-    position: [0.02, -0.36, 0.135]
+    dimensions: [0.04, 0.083, 0.275]
+    position: [0.02, -0.3015, 0.1375]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
   - id: opening_top_wall
     frame_id: test_device
     type: box
-    dimensions: [0.04, 0.92, 0.08]
-    position: [0.02, 0.0, 0.31]
+    dimensions: [0.04, 0.676, 0.08]
+    position: [0.02, -0.005, 0.290]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
   - id: opening_bottom_wall
     frame_id: test_device
     type: box
-    dimensions: [0.04, 0.92, 0.08]
-    position: [0.02, 0.00, -0.04]
+    dimensions: [0.04, 0.676, 0.08]
+    position: [0.02, -0.005, -0.04]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
+  - id: pickup_slot
+    frame_id: test_device
+    type: box
+    dimensions: [0.163, 0.105, 0.020]
+    position: [0.0995, 0.1015, 0.010]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
+  - id: opentrons_floor
+    frame_id: test_device
+    type: box
+    dimensions: [0.300, 0.580, 0.010]
+    position: [0.1875, 0.0100, -0.005]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
 
-#frames:
-#  - parent: lab_world
-#    child: world
-#    translation: [0.0, 0.0, 0.0]
-#    rotation_rpy: [0.0, 0.0, 0.0]
-#
-#  - parent: lab_world
-#    child: test_device
-#    translation: [0.133160748727, -0.255, 0.182]
-#    rotation_rpy: [0.0, 0.0, -1.57079632679]
-#
-#  - parent: lab_world
-#    child: test_pickup
-#    translation: [0.231160748727, -0.352485234158, 0.285373975056]
-#    rotation_rpy: [0.0, 0.0, 0.0]
-#
-#  - parent: test_pickup
-#    child: test_tool_goal
-#    translation: [0.0, 0.0, 0.0]
-#    rotation_rpy: [3.092677130111, 0.029176729897, -0.037457111126]
-  
+  # Saroktartó: X minimum, Y minimum
+  - id: pickup_corner_xmin_ymin_x
+    frame_id: test_device
+    type: box
+    dimensions: [0.034, 0.003, 0.016]
+    position: [0.046, 0.053, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: pickup_corner_xmin_ymin_y
+    frame_id: test_device
+    type: box
+    dimensions: [0.003, 0.034, 0.016]
+    position: [0.030, 0.069, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  # Saroktartó: X maximum, Y minimum
+  - id: pickup_corner_xmax_ymin_x
+    frame_id: test_device
+    type: box
+    dimensions: [0.034, 0.003, 0.016]
+    position: [0.153, 0.053, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: pickup_corner_xmax_ymin_y
+    frame_id: test_device
+    type: box
+    dimensions: [0.003, 0.034, 0.016]
+    position: [0.169, 0.069, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  # Saroktartó: X minimum, Y maximum
+  - id: pickup_corner_xmin_ymax_x
+    frame_id: test_device
+    type: box
+    dimensions: [0.034, 0.003, 0.016]
+    position: [0.046, 0.150, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: pickup_corner_xmin_ymax_y
+    frame_id: test_device
+    type: box
+    dimensions: [0.003, 0.034, 0.016]
+    position: [0.030, 0.134, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  # Saroktartó: X maximum, Y maximum
+  - id: pickup_corner_xmax_ymax_x
+    frame_id: test_device
+    type: box
+    dimensions: [0.034, 0.003, 0.016]
+    position: [0.153, 0.150, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  - id: pickup_corner_xmax_ymax_y
+    frame_id: test_device
+    type: box
+    dimensions: [0.003, 0.034, 0.016]
+    position: [0.169, 0.134, 0.028]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+      # Plate: 127 × 86 mm talp, 6 mm magas
+  - id: plate_base
+    frame_id: test_device
+    type: box
+    dimensions: [0.127, 0.086, 0.006]
+    position: [0.0995, 0.1015, 0.023]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  # Plate: 122 × 80 mm felső test, 8 mm magas
+  - id: plate_body
+    frame_id: test_device
+    type: box
+    dimensions: [0.122, 0.080, 0.008]
+    position: [0.0995, 0.1015, 0.030]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]

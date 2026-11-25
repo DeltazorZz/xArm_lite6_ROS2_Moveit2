@@ -7,15 +7,71 @@ from rclpy.action import ActionClient
 from big_chemistry_motion.motion_checks import (
     check_planning_ready,
     check_execution_start,
-)
-from big_chemistry_motion.motion_checks import (
-    check_planning_ready,
-    check_execution_start,
     check_controller_ready,
 )
 
+def _require_execution_backend(node, expected_backend):
+    if expected_backend not in ('fake', 'real'):
+        raise ValueError('Execution backend must be fake or real.')
 
-def execute_reviewed_trajectory(node, result, planned_world_status):
+    selected = node.get_parameter('gripper_backend').value
+
+    if selected != expected_backend:
+        raise RuntimeError(
+            f'Execution expects backend={expected_backend}, '
+            f'but gripper_backend={selected}.'
+        )
+
+    if expected_backend == 'fake':
+        from big_chemistry_motion.fake_pickup import (
+            require_fake_environment,
+        )
+        require_fake_environment(node)
+
+    else:
+        from big_chemistry_motion.real_pickup import (
+            require_real_environment,
+        )
+        require_real_environment(node)
+
+def execute_reviewed_trajectory(
+    node,
+    result,
+    planned_world_status,
+    *,
+    fake_only=False,
+    confirm=True,
+    expected_backend=None,
+):
+    if fake_only and expected_backend not in (None, 'fake'):
+        raise ValueError(
+            'fake_only conflicts with the requested execution backend.'
+        )
+
+    if fake_only:
+        backend = 'fake'
+    elif expected_backend is None:
+        backend = node.get_parameter('gripper_backend').value
+    else:
+        backend = expected_backend
+
+    _require_execution_backend(node, backend)
+
+    if not node.get_parameter('execute').value:
+        raise RuntimeError('Trajectory execution requires execute:=true.')
+
+    if fake_only:
+        if node.get_parameter('motion_goal').value != 'pickup_fake':
+            raise RuntimeError(
+                'Fake sequence execution requires motion_goal:=pickup_fake.'
+            )
+
+    elif not confirm:
+        raise RuntimeError(
+            'Skipping individual confirmation is restricted '
+            'to the reviewed fake sequence.'
+        )
+
     client = ActionClient(
         node,
         ExecuteTrajectory,
@@ -29,14 +85,18 @@ def execute_reviewed_trajectory(node, result, planned_world_status):
         if not client.wait_for_server(timeout_sec=5.0):
             raise RuntimeError('Execution action server is unavailable.')
 
-        answer = input(
-            'Review the complete trajectory in RViz.\n'
-            'Type EXECUTE to move the real robot; anything else cancels: '
-        ).strip()
+        if confirm:
+            robot_label = 'FAKE robot' if backend == 'fake' else 'REAL robot'
 
-        if answer != 'EXECUTE':
-            node.get_logger().info('Cancelled. No motion command sent.')
-            return
+            answer = input(
+                'Review the complete trajectory in RViz.\n'
+                f'Type EXECUTE to move the {robot_label}; '
+                'anything else cancels: '
+            ).strip()
+
+            if answer != 'EXECUTE':
+                node.get_logger().info('Cancelled. No motion command sent.')
+                return False
 
         current_status = check_planning_ready(node)
 
@@ -49,15 +109,18 @@ def execute_reviewed_trajectory(node, result, planned_world_status):
             raise RuntimeError(
                 'World status changed. Create and review a new plan.'
             )
-
+            
         check_controller_ready(node)
+        _require_execution_backend(node, backend)
         check_execution_start(node, result)
-
+        
         goal = ExecuteTrajectory.Goal()
         goal.trajectory = result.trajectory
 
+
         node.get_logger().warning(
-            'Sending reviewed trajectory. The real robot may move now.'
+            f'Sending reviewed trajectory to the verified {backend} backend. \n'
+            'The real robot may move now.'
         )
 
         goal_future = client.send_goal_async(goal)
@@ -107,6 +170,7 @@ def execute_reviewed_trajectory(node, result, planned_world_status):
             )
 
         node.get_logger().info('Execution completed successfully.')
+        return True
 
     except (Exception, KeyboardInterrupt):
         if request_sent:
